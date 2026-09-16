@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 import type { StaffProfile, StaffRole } from '@/types';
 
 interface AuthContextValue {
@@ -20,7 +20,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) {
+        console.error('Failed to get session:', error.message);
+        setLoading(false);
+        return;
+      }
       setSession(data.session);
       if (data.session) {
         loadProfile(data.session.user.id);
@@ -39,7 +52,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => authListener.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   async function loadProfile(userId: string) {
@@ -57,11 +73,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      return { error: 'Database is not configured. Contact the administrator.' };
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error: error?.message ?? null };
   }
 
   async function signOut() {
+    if (!isSupabaseConfigured) return;
     await supabase.auth.signOut();
     setProfile(null);
   }

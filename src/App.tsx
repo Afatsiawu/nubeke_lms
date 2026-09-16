@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { isSupabaseConfigured } from '@/lib/supabase';
 import { StaffLayout } from '@/components/StaffLayout';
 import { OPACPage } from '@/pages/OPAC';
 import { LoginPage } from '@/pages/Login';
@@ -72,9 +73,7 @@ function AppRoutes() {
 }
 
 function App() {
-  const hasEnv = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  if (!hasEnv) {
+  if (!isSupabaseConfigured) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-ink-50 px-4">
         <div className="max-w-md text-center">
