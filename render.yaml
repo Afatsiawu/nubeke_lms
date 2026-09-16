@@ -11,6 +11,6 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_SUPABASE_URL
-        sync: false
+        value: https://varoicbqkzczmuwkuqsq.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
-        sync: false
+        value: sb_publishable_lx-aFYfdtaU2rk6X6B5mTg_5fs3H2_Z
