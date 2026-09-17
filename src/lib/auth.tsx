@@ -27,8 +27,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
+    const sessionTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.error('Auth session check timed out after 10 seconds');
+        setLoading(false);
+      }
+    }, 10000);
+
     supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
+      clearTimeout(sessionTimeout);
       if (error) {
         console.error('Failed to get session:', error.message);
         setLoading(false);
@@ -40,6 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setLoading(false);
       }
+    }).catch((err) => {
+      if (!mounted) return;
+      clearTimeout(sessionTimeout);
+      console.error('getSession threw:', err);
+      setLoading(false);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -54,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(sessionTimeout);
       authListener.subscription.unsubscribe();
     };
   }, []);
