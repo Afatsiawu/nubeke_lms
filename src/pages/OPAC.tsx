@@ -75,7 +75,7 @@ export function OPACPage() {
             <div className="flex items-center gap-3">
               <SyncStatus />
               <a
-                href="/staff/dashboard"
+                href="#/staff/login"
                 className="hidden sm:flex items-center gap-1.5 text-sm font-medium text-forest-600 hover:text-forest-700"
               >
                 Staff sign in

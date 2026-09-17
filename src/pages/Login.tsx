@@ -118,7 +118,7 @@ export function LoginPage() {
             <p className="text-xs text-ink-400 text-center">
               Library members can search the catalog without signing in.
             </p>
-            <a href="/" className="mt-2 block text-center text-sm font-medium text-forest-600 hover:text-forest-700">
+            <a href="#/" className="mt-2 block text-center text-sm font-medium text-forest-600 hover:text-forest-700">
               Go to public catalog →
             </a>
           </div>
