@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { logAction } from '@/lib/audit';
 import { generateCopyCode, getAvailability } from '@/lib/utils';
+import { enqueueOp, isOnline } from '@/lib/offline-queue';
 import type { Book, Copy } from '@/types';
 
 interface BookWithCopies extends Book {
@@ -51,6 +52,18 @@ export function CatalogingPage() {
 
   async function handleDelete(book: BookWithCopies) {
     if (!confirm(`Remove "${book.title}" and all its copies? This cannot be undone.`)) return;
+    if (!isOnline()) {
+      await enqueueOp('book_delete', 'books', {}, {
+        filters: { id: book.id },
+        staffId: profile?.id,
+        auditAction: 'catalog_remove',
+        auditEntityType: 'book',
+        auditEntityId: book.id,
+        auditDetails: { title: book.title },
+      });
+      await loadBooks();
+      return;
+    }
     const { error: err } = await supabase.from('books').delete().eq('id', book.id);
     if (err) {
       setError(err.message);
@@ -69,7 +82,7 @@ export function CatalogingPage() {
           <h1 className="font-serif text-2xl font-semibold text-ink-900">Catalog</h1>
           <p className="text-sm text-ink-500 mt-1">Add, edit, and manage book records.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setShowBulkUpload(true)} className="btn-secondary">
             <Upload className="h-4 w-4" /> Bulk upload
           </button>
@@ -107,7 +120,8 @@ export function CatalogingPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[500px]">
             <thead className="bg-ink-50 border-b border-ink-200">
               <tr>
                 <th className="text-left text-xs font-semibold text-ink-500 uppercase tracking-wider px-4 py-3">Title</th>
@@ -161,6 +175,7 @@ export function CatalogingPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -273,6 +288,28 @@ function BookFormModal({
       cover_image_url: form.cover_image_url || null,
       description: form.description || null,
     };
+
+    if (!isOnline()) {
+      if (book) {
+        await enqueueOp('book_update', 'books', payload, {
+          filters: { id: book.id },
+          staffId: profile?.id,
+          auditAction: 'catalog_edit',
+          auditEntityType: 'book',
+          auditEntityId: book.id,
+          auditDetails: { title: form.title },
+        });
+      } else {
+        await enqueueOp('book_insert', 'books', payload, {
+          staffId: profile?.id,
+          auditAction: 'catalog_add',
+          auditEntityType: 'book',
+          auditDetails: { title: form.title },
+        });
+      }
+      onSaved();
+      return;
+    }
 
     let result;
     if (book) {

@@ -76,7 +76,8 @@ export function MembersPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[600px]">
             <thead className="bg-ink-50 border-b border-ink-200">
               <tr>
                 <th className="text-left text-xs font-semibold text-ink-500 uppercase tracking-wider px-4 py-3">Name</th>
@@ -114,6 +115,7 @@ export function MembersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

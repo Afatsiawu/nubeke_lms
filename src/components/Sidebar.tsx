@@ -9,6 +9,7 @@ import {
   Bookmark,
   ScrollText,
   LogOut,
+  X,
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { SyncStatus } from './SyncStatus';
@@ -33,15 +34,24 @@ const navItems: NavItem[] = [
   { to: '/staff/audit', label: 'Audit Log', icon: ScrollText, roles: ['staff', 'management'] },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { profile, signOut } = useAuth();
 
   const visibleItems = navItems.filter((item) => profile && item.roles.includes(profile.role));
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-ink-200 bg-white">
-      <div className="flex items-center px-5 py-4 border-b border-ink-200">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-ink-200">
         <Logo />
+        {onNavigate && (
+          <button
+            onClick={onNavigate}
+            className="lg:hidden rounded-lg p-1.5 text-ink-400 hover:bg-ink-100"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
@@ -51,6 +61,7 @@ export function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={onNavigate}
               className={({ isActive }) =>
                 `nav-link ${isActive ? 'nav-link-active' : ''}`
               }
@@ -65,13 +76,13 @@ export function Sidebar() {
       <div className="border-t border-ink-200 px-3 py-3 space-y-3">
         <SyncStatus />
         <div className="flex items-center justify-between rounded-lg bg-ink-50 px-3 py-2">
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-ink-900">{profile?.full_name}</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-medium text-ink-900 truncate">{profile?.full_name}</span>
             <span className="text-xs capitalize text-ink-500">{profile?.role}</span>
           </div>
           <button
             onClick={() => signOut()}
-            className="rounded-lg p-2 text-ink-500 hover:bg-rust-50 hover:text-rust-600 transition-colors"
+            className="rounded-lg p-2 text-ink-500 hover:bg-rust-50 hover:text-rust-600 transition-colors shrink-0"
             title="Sign out"
           >
             <LogOut className="h-4 w-4" />

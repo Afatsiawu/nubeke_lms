@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, FormEvent } from 'react';
-import { ArrowRightLeft, Search, ArrowRight, RotateCcw, AlertCircle, Check, User, Book as BookIcon } from 'lucide-react';
+import { ArrowRightLeft, Search, ArrowRight, RotateCcw, AlertCircle, Check, User, Book as BookIcon, CloudOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { logAction } from '@/lib/audit';
 import { formatDate, isOverdue, defaultDueDate, daysUntilDue } from '@/lib/utils';
+import { enqueueOp, isOnline } from '@/lib/offline-queue';
 import type { Loan, Copy, Member, Book } from '@/types';
 
 type Tab = 'checkout' | 'return' | 'overdue';
@@ -18,7 +19,7 @@ export function CirculationPage() {
         <p className="text-sm text-ink-500 mt-1">Check out and return books. Scan or type codes — barcode scanners work automatically.</p>
       </div>
 
-      <div className="flex gap-1 mb-6 bg-ink-100 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-6 bg-ink-100 rounded-lg p-1 w-fit max-w-full overflow-x-auto">
         <TabButton active={tab === 'checkout'} onClick={() => setTab('checkout')} icon={ArrowRight} label="Check out" />
         <TabButton active={tab === 'return'} onClick={() => setTab('return')} icon={RotateCcw} label="Return" />
         <TabButton active={tab === 'overdue'} onClick={() => setTab('overdue')} icon={AlertCircle} label="Overdue" />
@@ -120,15 +121,36 @@ function CheckoutPanel() {
       return;
     }
 
+    const loanPayload = {
+      copy_id: copyResult.id,
+      member_id: selectedMember.id,
+      staff_id: profile.id,
+      due_date: dueDate,
+      status: 'active',
+    };
+
+    if (!isOnline()) {
+      await enqueueOp('loan_insert', 'loans', loanPayload, {
+        filters: { copy_id: copyResult.id },
+        staffId: profile.id,
+        auditAction: 'checkout',
+        auditEntityType: 'loan',
+        auditDetails: {
+          copy_code: copyResult.copy_code,
+          member: selectedMember.full_name,
+        },
+      });
+      setSuccess(`Queued: "${copyResult.books.title}" checked out to ${selectedMember.full_name}. Will sync when online.`);
+      setCopyQuery('');
+      setCopyResult(null);
+      setCopyError(null);
+      copyInputRef.current?.focus();
+      return;
+    }
+
     const { data: loan, error: err } = await supabase
       .from('loans')
-      .insert({
-        copy_id: copyResult.id,
-        member_id: selectedMember.id,
-        staff_id: profile.id,
-        due_date: dueDate,
-        status: 'active',
-      })
+      .insert(loanPayload)
       .select()
       .single();
 
@@ -332,9 +354,30 @@ function ReturnPanel() {
       return;
     }
 
+    const returnPayload = { returned_at: new Date().toISOString(), status: 'returned' };
+
+    if (!isOnline()) {
+      await enqueueOp('loan_update', 'loans', returnPayload, {
+        filters: { id: activeLoan.id, copy_id: copyResult.id },
+        staffId: profile.id,
+        auditAction: 'return',
+        auditEntityType: 'loan',
+        auditDetails: {
+          copy_code: copyResult.copy_code,
+          member: activeLoan.members.full_name,
+        },
+      });
+      setSuccess(`Queued: Returned "${copyResult.books.title}" (${copyResult.copy_code}). Will sync when online.`);
+      setCopyQuery('');
+      setCopyResult(null);
+      setActiveLoan(null);
+      inputRef.current?.focus();
+      return;
+    }
+
     const { error: err } = await supabase
       .from('loans')
-      .update({ returned_at: new Date().toISOString(), status: 'returned' })
+      .update(returnPayload)
       .eq('id', activeLoan.id);
 
     if (err) {
@@ -474,7 +517,8 @@ function OverduePanel() {
       <div className="px-5 py-3 bg-rust-50 border-b border-rust-100">
         <p className="text-sm font-medium text-rust-700">{overdueLoans.length} overdue {overdueLoans.length === 1 ? 'item' : 'items'}</p>
       </div>
-      <table className="w-full">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px]">
         <thead className="bg-ink-50 border-b border-ink-200">
           <tr>
             <th className="text-left text-xs font-semibold text-ink-500 uppercase tracking-wider px-4 py-3">Member</th>
@@ -503,6 +547,7 @@ function OverduePanel() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

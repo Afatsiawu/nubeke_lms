@@ -74,21 +74,21 @@ export function DashboardPage() {
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard icon={BookOpen} label="Books in catalog" value={stats?.totalBooks ?? 0} color="forest" to="/staff/catalog" />
         <StatCard icon={Package} label="Total copies" value={stats?.totalCopies ?? 0} color="kente" to="/staff/inventory" />
         <StatCard icon={ArrowRightLeft} label="Active loans" value={stats?.activeLoans ?? 0} color="clay" to="/staff/circulation" />
         <StatCard icon={AlertTriangle} label="Overdue" value={stats?.overdueCount ?? 0} color="rust" to="/staff/circulation" />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard icon={Users} label="Members" value={stats?.totalMembers ?? 0} color="ink" to="/staff/members" />
         <StatCard icon={Package} label="Available copies" value={stats?.availableCopies ?? 0} color="forest" to="/staff/inventory" />
         <StatCard icon={ArrowRightLeft} label="Borrowed copies" value={stats?.borrowedCopies ?? 0} color="kente" to="/staff/inventory" />
         <StatCard icon={TrendingUp} label="Total loans" value={stats?.activeLoans ?? 0} color="gold" to="/staff/reports" />
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         {/* Recent loans */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
@@ -179,13 +179,13 @@ function StatCard({
   return (
     <Link to={to} className="stat-card hover:shadow-md transition-shadow group">
       <div className="flex items-center justify-between">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${c.bg}`}>
-          <Icon className={`h-5 w-5 ${c.icon}`} />
+        <div className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg ${c.bg}`}>
+          <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${c.icon}`} />
         </div>
         <ChevronRight className="h-4 w-4 text-ink-300 group-hover:text-ink-500 transition-colors" />
       </div>
-      <p className="mt-3 text-2xl font-semibold text-ink-900">{value}</p>
-      <p className="text-sm text-ink-500">{label}</p>
+      <p className="mt-2 sm:mt-3 text-xl sm:text-2xl font-semibold text-ink-900">{value}</p>
+      <p className="text-xs sm:text-sm text-ink-500">{label}</p>
     </Link>
   );
 }
