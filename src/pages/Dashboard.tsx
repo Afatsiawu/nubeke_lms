@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, ArrowRightLeft, AlertTriangle, Users, Package, TrendingUp, ChevronRight } from 'lucide-react';
+import { BookOpen, ArrowRightLeft, TriangleAlert as AlertTriangle, Users, ChevronRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatDate, isOverdue } from '@/lib/utils';
@@ -8,9 +8,6 @@ import type { Book, Copy, Loan, Member } from '@/types';
 
 interface DashboardStats {
   totalBooks: number;
-  totalCopies: number;
-  availableCopies: number;
-  borrowedCopies: number;
   overdueCount: number;
   totalMembers: number;
   activeLoans: number;
@@ -25,9 +22,8 @@ export function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const [booksRes, copiesRes, membersRes, loansRes] = await Promise.all([
+      const [booksRes, membersRes, loansRes] = await Promise.all([
         supabase.from('books').select('id'),
-        supabase.from('copies').select('id, status'),
         supabase.from('members').select('id'),
         supabase
           .from('loans')
@@ -36,14 +32,10 @@ export function DashboardPage() {
           .limit(10),
       ]);
 
-      const copies = copiesRes.data ?? [];
       const loans = (loansRes.data ?? []) as (Loan & { copies: Copy; members: Member })[];
 
       setStats({
         totalBooks: booksRes.data?.length ?? 0,
-        totalCopies: copies.length,
-        availableCopies: copies.filter((c) => c.status === 'available').length,
-        borrowedCopies: copies.filter((c) => c.status === 'borrowed').length,
         overdueCount: loans.filter((l) => l.status === 'active' && isOverdue(l.due_date, l.returned_at)).length,
         totalMembers: membersRes.data?.length ?? 0,
         activeLoans: loans.filter((l) => l.status === 'active').length,
@@ -76,16 +68,9 @@ export function DashboardPage() {
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard icon={BookOpen} label="Books in catalog" value={stats?.totalBooks ?? 0} color="forest" to="/staff/catalog" />
-        <StatCard icon={Package} label="Total copies" value={stats?.totalCopies ?? 0} color="kente" to="/staff/inventory" />
+        <StatCard icon={Users} label="Members" value={stats?.totalMembers ?? 0} color="ink" to="/staff/members" />
         <StatCard icon={ArrowRightLeft} label="Active loans" value={stats?.activeLoans ?? 0} color="clay" to="/staff/circulation" />
         <StatCard icon={AlertTriangle} label="Overdue" value={stats?.overdueCount ?? 0} color="rust" to="/staff/circulation" />
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
-        <StatCard icon={Users} label="Members" value={stats?.totalMembers ?? 0} color="ink" to="/staff/members" />
-        <StatCard icon={Package} label="Available copies" value={stats?.availableCopies ?? 0} color="forest" to="/staff/inventory" />
-        <StatCard icon={ArrowRightLeft} label="Borrowed copies" value={stats?.borrowedCopies ?? 0} color="kente" to="/staff/inventory" />
-        <StatCard icon={TrendingUp} label="Total loans" value={stats?.activeLoans ?? 0} color="gold" to="/staff/reports" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
@@ -159,7 +144,6 @@ const colorMap = {
   clay: { bg: 'bg-clay-50', text: 'text-clay-700', icon: 'text-clay-600' },
   rust: { bg: 'bg-rust-50', text: 'text-rust-700', icon: 'text-rust-600' },
   ink: { bg: 'bg-ink-50', text: 'text-ink-700', icon: 'text-ink-600' },
-  gold: { bg: 'bg-gold-50', text: 'text-gold-800', icon: 'text-gold-600' },
 };
 
 function StatCard({
