@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { logAction } from '@/lib/audit';
 import { formatDate, generateMemberCode } from '@/lib/utils';
+import { enqueueOp, isOnline } from '@/lib/offline-queue';
 import type { Member, MembershipStatus } from '@/types';
 
 export function MembersPage() {
@@ -167,6 +168,28 @@ function MemberFormModal({
       address: form.address || null,
       membership_status: form.membership_status as MembershipStatus,
     };
+
+    if (!isOnline()) {
+      if (member) {
+        await enqueueOp('member_update', 'members', payload, {
+          filters: { id: member.id },
+          staffId: profile?.id,
+          auditAction: 'member_edit',
+          auditEntityType: 'member',
+          auditEntityId: member.id,
+          auditDetails: { name: form.full_name },
+        });
+      } else {
+        await enqueueOp('member_insert', 'members', payload, {
+          staffId: profile?.id,
+          auditAction: 'member_register',
+          auditEntityType: 'member',
+          auditDetails: { name: form.full_name, code: form.member_code },
+        });
+      }
+      onSaved();
+      return;
+    }
 
     let result;
     if (member) {
