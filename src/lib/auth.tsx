@@ -9,6 +9,7 @@ interface AuthContextValue {
   profile: StaffProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -94,6 +95,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
+  async function signUp(email: string, password: string, fullName: string) {
+    if (!isSupabaseConfigured) {
+      return { error: 'Database is not configured. Contact the administrator.' };
+    }
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return { error: error.message };
+    if (data.user) {
+      const { error: profileErr } = await supabase
+        .from('staff_profiles')
+        .insert({ id: data.user.id, full_name: fullName, role: 'staff' });
+      if (profileErr) {
+        return { error: `Account created but profile setup failed: ${profileErr.message}. Contact an administrator.` };
+      }
+    }
+    return { error: null };
+  }
+
   async function signOut() {
     if (!isSupabaseConfigured) return;
     await supabase.auth.signOut();
@@ -102,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ session, user: session?.user ?? null, profile, loading, signIn, signOut }}
+      value={{ session, user: session?.user ?? null, profile, loading, signIn, signUp, signOut }}
     >
       {children}
     </AuthContext.Provider>

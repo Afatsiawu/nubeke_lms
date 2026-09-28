@@ -114,11 +114,17 @@ export function LoginPage() {
             </button>
           </form>
 
-          <div className="pt-4 border-t border-ink-100">
+          <div className="pt-4 border-t border-ink-100 space-y-2">
+            <p className="text-center text-sm text-ink-500">
+              Don't have an account?{' '}
+              <a href="#/staff/signup" className="font-medium text-forest-600 hover:text-forest-700">
+                Create one
+              </a>
+            </p>
             <p className="text-xs text-ink-400 text-center">
               Library members can search the catalog without signing in.
             </p>
-            <a href="#/" className="mt-2 block text-center text-sm font-medium text-forest-600 hover:text-forest-700">
+            <a href="#/" className="block text-center text-sm font-medium text-forest-600 hover:text-forest-700">
               Go to public catalog →
             </a>
           </div>

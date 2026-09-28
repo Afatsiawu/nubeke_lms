@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from '@/lib/supabase';
 import { StaffLayout } from '@/components/StaffLayout';
 import { OPACPage } from '@/pages/OPAC';
 import { LoginPage } from '@/pages/Login';
+import { SignUpPage } from '@/pages/SignUp';
 import { DashboardPage } from '@/pages/Dashboard';
 import { CatalogingPage } from '@/pages/Cataloging';
 import { CirculationPage } from '@/pages/Circulation';
@@ -34,6 +35,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<OPACPage />} />
       <Route path="/staff/login" element={<LoginPage />} />
+      <Route path="/staff/signup" element={<SignUpPage />} />
       <Route
         path="/staff"
         element={
@@ -44,23 +46,23 @@ function AppRoutes() {
       >
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="catalog" element={
-          <ProtectedRoute roles={['staff']}>
+          <ProtectedRoute roles={['staff', 'management']}>
             <CatalogingPage />
           </ProtectedRoute>
         } />
         <Route path="circulation" element={
-          <ProtectedRoute roles={['staff']}>
+          <ProtectedRoute roles={['staff', 'management']}>
             <CirculationPage />
           </ProtectedRoute>
         } />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="members" element={
-          <ProtectedRoute roles={['staff']}>
+          <ProtectedRoute roles={['staff', 'management']}>
             <MembersPage />
           </ProtectedRoute>
         } />
         <Route path="reservations" element={
-          <ProtectedRoute roles={['staff']}>
+          <ProtectedRoute roles={['staff', 'management']}>
             <ReservationsPage />
           </ProtectedRoute>
         } />
