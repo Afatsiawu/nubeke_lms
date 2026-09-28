@@ -208,11 +208,23 @@ export function CatalogingPage() {
 async function uploadCoverImage(file: File): Promise<string | null> {
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const fileName = `cover_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const contentType = file.type || 'image/jpeg';
+
   const { error } = await supabase.storage
     .from('book_covers')
-    .upload(fileName, file, { cacheControl: '3600', upsert: false });
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType,
+    });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(
+      error.message.includes('row-level security')
+        ? 'Permission denied uploading image. Make sure you are signed in as staff.'
+        : `Image upload failed: ${error.message}`
+    );
+  }
 
   const { data: urlData } = supabase.storage
     .from('book_covers')
