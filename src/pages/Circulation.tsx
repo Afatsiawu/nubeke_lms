@@ -16,7 +16,7 @@ export function CirculationPage() {
     <div className="p-6 lg:p-8 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="font-serif text-2xl font-semibold text-ink-900">Circulation</h1>
-        <p className="text-sm text-ink-500 mt-1">Check out and return books. Scan or type codes — barcode scanners work automatically.</p>
+        <p className="text-sm text-ink-500 mt-1">Check out and return books by searching for the title.</p>
       </div>
 
       <div className="flex gap-1 mb-6 bg-ink-100 rounded-lg p-1 w-fit max-w-full overflow-x-auto">
@@ -45,18 +45,23 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
   );
 }
 
+interface BookWithAvailableCopies extends Book {
+  copies: Copy[];
+}
+
 function CheckoutPanel() {
   const { profile } = useAuth();
   const [memberQuery, setMemberQuery] = useState('');
   const [memberResults, setMemberResults] = useState<Member[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-  const [copyQuery, setCopyQuery] = useState('');
-  const [copyResult, setCopyResult] = useState<(Copy & { books: Book }) | null>(null);
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState<BookWithAvailableCopies[]>([]);
+  const [selectedCopy, setSelectedCopy] = useState<(Copy & { books: Book }) | null>(null);
+  const [searching, setSearching] = useState(false);
   const [dueDate, setDueDate] = useState(defaultDueDate());
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const copyInputRef = useRef<HTMLInputElement>(null);
+  const bookInputRef = useRef<HTMLInputElement>(null);
   const memberInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -64,10 +69,10 @@ function CheckoutPanel() {
   }, []);
 
   useEffect(() => {
-    if (selectedMember) {
-      copyInputRef.current?.focus();
+    if (selectedMember && !selectedCopy) {
+      bookInputRef.current?.focus();
     }
-  }, [selectedMember]);
+  }, [selectedMember, selectedCopy]);
 
   async function searchMembers(q: string) {
     setMemberQuery(q);
@@ -83,36 +88,38 @@ function CheckoutPanel() {
     setMemberResults(data ?? []);
   }
 
-  async function lookupCopy(code: string) {
-    setCopyQuery(code);
-    setCopyError(null);
-    setCopyResult(null);
-    if (!code.trim()) return;
+  async function searchBooks(q: string) {
+    setBookQuery(q);
+    if (q.trim().length < 1) {
+      setBookResults([]);
+      return;
+    }
+    setSearching(true);
+    const { data } = await supabase
+      .from('books')
+      .select('*, copies(*)')
+      .or(`title.ilike.%${q}%,author.ilike.%${q}%`)
+      .order('title')
+      .limit(15);
 
-    const { data, error: err } = await supabase
-      .from('copies')
-      .select('*, books(*)')
-      .eq('copy_code', code.trim())
-      .maybeSingle();
+    const withAvailable = (data ?? []).filter(
+      (b) => b.copies?.some((c: Copy) => c.status === 'available')
+    ) as BookWithAvailableCopies[];
+    setBookResults(withAvailable);
+    setSearching(false);
+  }
 
-    if (err) {
-      setCopyError(err.message);
-      return;
-    }
-    if (!data) {
-      setCopyError(`No copy found with code "${code.trim()}".`);
-      return;
-    }
-    if (data.status !== 'available') {
-      setCopyError(`Copy ${code.trim()} is currently ${data.status.replace('_', ' ')}.`);
-      return;
-    }
-    setCopyResult(data as Copy & { books: Book });
+  function selectBook(book: BookWithAvailableCopies) {
+    const available = book.copies.find((c) => c.status === 'available');
+    if (!available) return;
+    setSelectedCopy({ ...available, books: book });
+    setBookQuery('');
+    setBookResults([]);
   }
 
   async function handleCheckout(e: FormEvent) {
     e.preventDefault();
-    if (!selectedMember || !copyResult || !profile) return;
+    if (!selectedMember || !selectedCopy || !profile) return;
     setError(null);
     setSuccess(null);
 
@@ -122,7 +129,7 @@ function CheckoutPanel() {
     }
 
     const loanPayload = {
-      copy_id: copyResult.id,
+      copy_id: selectedCopy.id,
       member_id: selectedMember.id,
       staff_id: profile.id,
       due_date: dueDate,
@@ -131,20 +138,18 @@ function CheckoutPanel() {
 
     if (!isOnline()) {
       await enqueueOp('loan_insert', 'loans', loanPayload, {
-        filters: { copy_id: copyResult.id },
+        filters: { copy_id: selectedCopy.id },
         staffId: profile.id,
         auditAction: 'checkout',
         auditEntityType: 'loan',
         auditDetails: {
-          copy_code: copyResult.copy_code,
+          copy_code: selectedCopy.copy_code,
           member: selectedMember.full_name,
         },
       });
-      setSuccess(`Queued: "${copyResult.books.title}" checked out to ${selectedMember.full_name}. Will sync when online.`);
-      setCopyQuery('');
-      setCopyResult(null);
-      setCopyError(null);
-      copyInputRef.current?.focus();
+      setSuccess(`Queued: "${selectedCopy.books.title}" checked out to ${selectedMember.full_name}. Will sync when online.`);
+      setSelectedCopy(null);
+      bookInputRef.current?.focus();
       return;
     }
 
@@ -159,25 +164,25 @@ function CheckoutPanel() {
       return;
     }
 
-    await supabase.from('copies').update({ status: 'borrowed' }).eq('id', copyResult.id);
+    await supabase.from('copies').update({ status: 'borrowed' }).eq('id', selectedCopy.id);
     await logAction(profile.id, 'checkout', 'loan', loan.id, {
-      copy_code: copyResult.copy_code,
+      copy_code: selectedCopy.copy_code,
       member: selectedMember.full_name,
     });
 
-    setSuccess(`Checked out "${copyResult.books.title}" to ${selectedMember.full_name}. Due ${formatDate(dueDate)}.`);
+    setSuccess(`Checked out "${selectedCopy.books.title}" to ${selectedMember.full_name}. Due ${formatDate(dueDate)}.`);
 
-    // Reset for next checkout
-    setCopyQuery('');
-    setCopyResult(null);
-    setCopyError(null);
-    copyInputRef.current?.focus();
+    setSelectedCopy(null);
+    bookInputRef.current?.focus();
   }
 
   function resetMember() {
     setSelectedMember(null);
     setMemberQuery('');
     setMemberResults([]);
+    setSelectedCopy(null);
+    setBookQuery('');
+    setBookResults([]);
     memberInputRef.current?.focus();
   }
 
@@ -218,7 +223,7 @@ function CheckoutPanel() {
                 ref={memberInputRef}
                 value={memberQuery}
                 onChange={(e) => searchMembers(e.target.value)}
-                placeholder="Type member name or code (or scan member card)…"
+                placeholder="Type member name or code…"
                 className="input pl-10"
               />
             </div>
@@ -243,37 +248,78 @@ function CheckoutPanel() {
         )}
       </div>
 
-      {/* Book / copy lookup */}
+      {/* Book search and selection */}
       {selectedMember && (
         <form onSubmit={handleCheckout} className="card p-5 space-y-4 animate-fade-in">
           <h2 className="font-semibold text-ink-900 flex items-center gap-2">
-            <BookIcon className="h-4 w-4 text-ink-400" /> Book copy
+            <BookIcon className="h-4 w-4 text-ink-400" /> Book
           </h2>
-          <div>
-            <label className="label">Copy code (type or scan barcode)</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
-              <input
-                ref={copyInputRef}
-                value={copyQuery}
-                onChange={(e) => lookupCopy(e.target.value)}
-                placeholder="Scan or type copy code, then press Enter…"
-                className="input pl-10 font-mono"
-              />
-            </div>
-          </div>
 
-          {copyError && (
-            <div className="flex items-start gap-2 rounded-lg bg-rust-50 px-3 py-2.5 text-sm text-rust-700">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> {copyError}
-            </div>
-          )}
-
-          {copyResult && (
+          {selectedCopy ? (
             <div className="rounded-lg bg-forest-50 px-4 py-3 animate-slide-up">
-              <p className="font-medium text-ink-900">{copyResult.books.title}</p>
-              <p className="text-sm text-ink-500">{copyResult.books.author}</p>
-              <p className="text-xs text-ink-400 font-mono mt-1">{copyResult.copy_code}</p>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="font-medium text-ink-900">{selectedCopy.books.title}</p>
+                  <p className="text-sm text-ink-500">{selectedCopy.books.author}</p>
+                  <p className="text-xs text-ink-400 font-mono mt-1">{selectedCopy.copy_code}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedCopy(null); bookInputRef.current?.focus(); }}
+                  className="btn-ghost text-sm"
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="label">Search for a book by title or author</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                <input
+                  ref={bookInputRef}
+                  value={bookQuery}
+                  onChange={(e) => searchBooks(e.target.value)}
+                  placeholder="Type a book title or author name…"
+                  className="input pl-10"
+                />
+                {searching && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="h-4 w-4 border-2 border-ink-300 border-t-forest-500 rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {bookResults.length > 0 && (
+                <div className="mt-2 space-y-1 max-h-72 overflow-y-auto">
+                  {bookResults.map((book) => {
+                    const avail = book.copies.filter((c) => c.status === 'available').length;
+                    return (
+                      <button
+                        key={book.id}
+                        type="button"
+                        onClick={() => selectBook(book)}
+                        className="w-full flex items-center justify-between rounded-lg border border-ink-100 px-4 py-2.5 hover:bg-forest-50 hover:border-forest-200 transition-colors text-left"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink-800 truncate">{book.title}</p>
+                          <p className="text-xs text-ink-500">{book.author}</p>
+                        </div>
+                        <span className="shrink-0 ml-3 inline-flex items-center gap-1 rounded-full bg-forest-100 px-2.5 py-0.5 text-xs font-medium text-forest-700">
+                          {avail} available
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {bookQuery.trim().length > 0 && bookResults.length === 0 && !searching && (
+                <p className="mt-2 text-sm text-ink-400">
+                  No available books found matching "{bookQuery.trim()}".
+                </p>
+              )}
             </div>
           )}
 
@@ -284,7 +330,7 @@ function CheckoutPanel() {
 
           <button
             type="submit"
-            disabled={!copyResult}
+            disabled={!selectedCopy}
             className="btn-primary w-full"
           >
             <ArrowRight className="h-4 w-4" /> Complete checkout
@@ -297,10 +343,11 @@ function CheckoutPanel() {
 
 function ReturnPanel() {
   const { profile } = useAuth();
-  const [copyQuery, setCopyQuery] = useState('');
-  const [copyResult, setCopyResult] = useState<(Copy & { books: Book }) | null>(null);
+  const [bookQuery, setBookQuery] = useState('');
+  const [bookResults, setBookResults] = useState<(Book & { copies: Copy[] })[]>([]);
+  const [selectedCopy, setSelectedCopy] = useState<(Copy & { books: Book }) | null>(null);
   const [activeLoan, setActiveLoan] = useState<(Loan & { members: Member }) | null>(null);
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -309,48 +356,52 @@ function ReturnPanel() {
     inputRef.current?.focus();
   }, []);
 
-  async function lookupCopy(code: string) {
-    setCopyQuery(code);
-    setCopyError(null);
-    setCopyResult(null);
-    setActiveLoan(null);
-    if (!code.trim()) return;
+  async function searchBooks(q: string) {
+    setBookQuery(q);
+    if (q.trim().length < 1) {
+      setBookResults([]);
+      return;
+    }
+    setSearching(true);
+    const { data } = await supabase
+      .from('books')
+      .select('*, copies(*)')
+      .or(`title.ilike.%${q}%,author.ilike.%${q}%`)
+      .order('title')
+      .limit(15);
 
-    const { data: copy, error: err } = await supabase
-      .from('copies')
-      .select('*, books(*)')
-      .eq('copy_code', code.trim())
+    const withBorrowed = (data ?? []).filter(
+      (b) => b.copies?.some((c: Copy) => c.status === 'borrowed')
+    ) as (Book & { copies: Copy[] })[];
+    setBookResults(withBorrowed);
+    setSearching(false);
+  }
+
+  async function selectBook(book: Book & { copies: Copy[] }) {
+    const borrowed = book.copies.find((c) => c.status === 'borrowed');
+    if (!borrowed) return;
+    const copyWithBook: Copy & { books: Book } = { ...borrowed, books: book };
+    setSelectedCopy(copyWithBook);
+    setBookQuery('');
+    setBookResults([]);
+
+    const { data: loan } = await supabase
+      .from('loans')
+      .select('*, members(*)')
+      .eq('copy_id', borrowed.id)
+      .eq('status', 'active')
       .maybeSingle();
-
-    if (err) {
-      setCopyError(err.message);
-      return;
-    }
-    if (!copy) {
-      setCopyError(`No copy found with code "${code.trim()}".`);
-      return;
-    }
-    setCopyResult(copy as Copy & { books: Book });
-
-    if (copy.status === 'borrowed') {
-      const { data: loan } = await supabase
-        .from('loans')
-        .select('*, members(*)')
-        .eq('copy_id', copy.id)
-        .eq('status', 'active')
-        .maybeSingle();
-      if (loan) setActiveLoan(loan as Loan & { members: Member });
-    }
+    if (loan) setActiveLoan(loan as Loan & { members: Member });
   }
 
   async function handleReturn(e: FormEvent) {
     e.preventDefault();
-    if (!copyResult || !profile) return;
+    if (!selectedCopy || !profile) return;
     setError(null);
     setSuccess(null);
 
     if (!activeLoan) {
-      setError(`Copy ${copyResult.copy_code} is not currently checked out.`);
+      setError(`"${selectedCopy.books.title}" is not currently checked out.`);
       return;
     }
 
@@ -358,18 +409,17 @@ function ReturnPanel() {
 
     if (!isOnline()) {
       await enqueueOp('loan_update', 'loans', returnPayload, {
-        filters: { id: activeLoan.id, copy_id: copyResult.id },
+        filters: { id: activeLoan.id, copy_id: selectedCopy.id },
         staffId: profile.id,
         auditAction: 'return',
         auditEntityType: 'loan',
         auditDetails: {
-          copy_code: copyResult.copy_code,
+          copy_code: selectedCopy.copy_code,
           member: activeLoan.members.full_name,
         },
       });
-      setSuccess(`Queued: Returned "${copyResult.books.title}" (${copyResult.copy_code}). Will sync when online.`);
-      setCopyQuery('');
-      setCopyResult(null);
+      setSuccess(`Queued: Returned "${selectedCopy.books.title}". Will sync when online.`);
+      setSelectedCopy(null);
       setActiveLoan(null);
       inputRef.current?.focus();
       return;
@@ -385,16 +435,15 @@ function ReturnPanel() {
       return;
     }
 
-    await supabase.from('copies').update({ status: 'available' }).eq('id', copyResult.id);
+    await supabase.from('copies').update({ status: 'available' }).eq('id', selectedCopy.id);
     await logAction(profile.id, 'return', 'loan', activeLoan.id, {
-      copy_code: copyResult.copy_code,
+      copy_code: selectedCopy.copy_code,
       member: activeLoan.members.full_name,
     });
 
-    setSuccess(`Returned "${copyResult.books.title}" (${copyResult.copy_code}). Book is now available.`);
+    setSuccess(`Returned "${selectedCopy.books.title}". Book is now available.`);
 
-    setCopyQuery('');
-    setCopyResult(null);
+    setSelectedCopy(null);
     setActiveLoan(null);
     inputRef.current?.focus();
   }
@@ -416,32 +465,72 @@ function ReturnPanel() {
         <h2 className="font-semibold text-ink-900 flex items-center gap-2">
           <RotateCcw className="h-4 w-4 text-ink-400" /> Return a book
         </h2>
-        <div>
-          <label className="label">Copy code (type or scan barcode)</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
-            <input
-              ref={inputRef}
-              value={copyQuery}
-              onChange={(e) => lookupCopy(e.target.value)}
-              placeholder="Scan or type copy code, then press Enter…"
-              className="input pl-10 font-mono"
-            />
-          </div>
-        </div>
 
-        {copyError && (
-          <div className="flex items-start gap-2 rounded-lg bg-rust-50 px-3 py-2.5 text-sm text-rust-700">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> {copyError}
-          </div>
-        )}
-
-        {copyResult && (
+        {selectedCopy ? (
           <div className="rounded-lg bg-ink-50 px-4 py-3 animate-slide-up">
-            <p className="font-medium text-ink-900">{copyResult.books.title}</p>
-            <p className="text-sm text-ink-500">{copyResult.books.author}</p>
-            <p className="text-xs text-ink-400 font-mono mt-1">{copyResult.copy_code}</p>
-            <p className="text-xs text-ink-500 mt-1">Status: {copyResult.status.replace('_', ' ')}</p>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-medium text-ink-900">{selectedCopy.books.title}</p>
+                <p className="text-sm text-ink-500">{selectedCopy.books.author}</p>
+                <p className="text-xs text-ink-400 font-mono mt-1">{selectedCopy.copy_code}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setSelectedCopy(null); setActiveLoan(null); inputRef.current?.focus(); }}
+                className="btn-ghost text-sm"
+              >
+                Change
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label className="label">Search for the book to return</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+              <input
+                ref={inputRef}
+                value={bookQuery}
+                onChange={(e) => searchBooks(e.target.value)}
+                placeholder="Type a book title or author name…"
+                className="input pl-10"
+              />
+              {searching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <div className="h-4 w-4 border-2 border-ink-300 border-t-forest-500 rounded-full animate-spin" />
+                </div>
+              )}
+            </div>
+
+            {bookResults.length > 0 && (
+              <div className="mt-2 space-y-1 max-h-72 overflow-y-auto">
+                {bookResults.map((book) => {
+                  const borrowed = book.copies.filter((c) => c.status === 'borrowed').length;
+                  return (
+                    <button
+                      key={book.id}
+                      type="button"
+                      onClick={() => selectBook(book)}
+                      className="w-full flex items-center justify-between rounded-lg border border-ink-100 px-4 py-2.5 hover:bg-forest-50 hover:border-forest-200 transition-colors text-left"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink-800 truncate">{book.title}</p>
+                        <p className="text-xs text-ink-500">{book.author}</p>
+                      </div>
+                      <span className="shrink-0 ml-3 inline-flex items-center gap-1 rounded-full bg-kente-100 px-2.5 py-0.5 text-xs font-medium text-kente-700">
+                        {borrowed} on loan
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {bookQuery.trim().length > 0 && bookResults.length === 0 && !searching && (
+              <p className="mt-2 text-sm text-ink-400">
+                No books on loan matching "{bookQuery.trim()}".
+              </p>
+            )}
           </div>
         )}
 
