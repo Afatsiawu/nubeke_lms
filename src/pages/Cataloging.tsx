@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, FormEvent } from 'react';
-import { Plus, Search, Edit2, Trash2, BookPlus, X, Save, AlertCircle, Upload, FileSpreadsheet, ImageIcon, Loader2 } from 'lucide-react';
+import { Plus, Minus, Search, Edit2, Trash2, BookPlus, X, Save, AlertCircle, Upload, FileSpreadsheet, ImageIcon, Loader2 } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -254,6 +254,7 @@ function BookFormModal({
     cover_image_url: book?.cover_image_url ?? '',
     description: book?.description ?? '',
   });
+  const [numCopies, setNumCopies] = useState<number>(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -337,6 +338,27 @@ function BookFormModal({
       setSaving(false);
       return;
     }
+
+    if (!book && result.data && numCopies > 0) {
+      const { data: allCopies } = await supabase.from('copies').select('copy_code');
+      const existingCodes = (allCopies ?? []).map((c: { copy_code: string }) => c.copy_code);
+      const copiesToInsert: { book_id: string; copy_code: string; status: string; condition: string }[] = [];
+      for (let i = 0; i < numCopies; i++) {
+        copiesToInsert.push({
+          book_id: result.data.id,
+          copy_code: generateCopyCode([...existingCodes, ...copiesToInsert.map((c) => c.copy_code)]),
+          status: 'available',
+          condition: 'good',
+        });
+      }
+      const { error: copiesErr } = await supabase.from('copies').insert(copiesToInsert);
+      if (copiesErr) {
+        setError(`Book saved, but copies failed: ${copiesErr.message}`);
+        setSaving(false);
+        return;
+      }
+    }
+
     onSaved();
   }
 
@@ -433,6 +455,36 @@ function BookFormModal({
             <label className="label">Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" rows={3} />
           </div>
+          {!book && (
+            <div>
+              <label className="label">Number of copies</label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setNumCopies(Math.max(0, numCopies - 1))}
+                  className="h-9 w-9 shrink-0 rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-100 flex items-center justify-center"
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <input
+                  type="number"
+                  min={0}
+                  max={999}
+                  value={numCopies}
+                  onChange={(e) => setNumCopies(Math.max(0, Math.min(999, parseInt(e.target.value, 10) || 0)))}
+                  className="input w-20 text-center"
+                />
+                <button
+                  type="button"
+                  onClick={() => setNumCopies(Math.min(999, numCopies + 1))}
+                  className="h-9 w-9 shrink-0 rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-100 flex items-center justify-center"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+                <span className="text-xs text-ink-400">Physical copies to create with this book (auto-numbered)</span>
+              </div>
+            </div>
+          )}
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-rust-50 px-3 py-2.5 text-sm text-rust-700">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -511,7 +563,11 @@ function BulkUploadModal({
           cover_image_url: row.cover_image_url?.trim() || null,
         };
 
-        const { error: insertErr } = await supabase.from('books').insert(payload);
+        const { data: insertedBook, error: insertErr } = await supabase
+          .from('books')
+          .insert(payload)
+          .select()
+          .single();
 
         if (insertErr) {
           failed++;
@@ -519,7 +575,23 @@ function BulkUploadModal({
         } else {
           added++;
           if (profile) {
-            await logAction(profile.id, 'catalog_add', 'book', undefined, { title: row.title, bulk: true });
+            await logAction(profile.id, 'catalog_add', 'book', insertedBook.id, { title: row.title, bulk: true });
+          }
+
+          const copyCount = row.copies ? parseInt(row.copies, 10) || 0 : 0;
+          if (copyCount > 0 && insertedBook) {
+            const { data: allCopies } = await supabase.from('copies').select('copy_code');
+            const existingCodes = (allCopies ?? []).map((c: { copy_code: string }) => c.copy_code);
+            const copiesToInsert: { book_id: string; copy_code: string; status: string; condition: string }[] = [];
+            for (let j = 0; j < copyCount; j++) {
+              copiesToInsert.push({
+                book_id: insertedBook.id,
+                copy_code: generateCopyCode([...existingCodes, ...copiesToInsert.map((c) => c.copy_code)]),
+                status: 'available',
+                condition: 'good',
+              });
+            }
+            await supabase.from('copies').insert(copiesToInsert);
           }
         }
       }
@@ -545,7 +617,7 @@ function BulkUploadModal({
   }
 
   function downloadTemplate() {
-    const headers = ['title', 'author', 'subject', 'call_number', 'publisher', 'publication_year', 'isbn', 'description', 'cover_image_url'];
+    const headers = ['title', 'author', 'subject', 'call_number', 'publisher', 'publication_year', 'isbn', 'description', 'cover_image_url', 'copies'];
     const csv = headers.join(',') + '\n';
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -597,7 +669,7 @@ function BulkUploadModal({
                 Upload a CSV file with book records. The file must have these column headers:
               </p>
               <div className="rounded-lg bg-ink-50 px-3 py-2.5">
-                <code className="text-xs text-ink-600">title, author, subject, call_number, publisher, publication_year, isbn, description, cover_image_url</code>
+                <code className="text-xs text-ink-600">title, author, subject, call_number, publisher, publication_year, isbn, description, cover_image_url, copies</code>
               </div>
               <p className="text-xs text-ink-400">
                 <span className="text-rust-500">*</span> Only <strong>title</strong> and <strong>author</strong> are required. All others are optional.
