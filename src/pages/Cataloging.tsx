@@ -591,7 +591,10 @@ function BulkUploadModal({
                 condition: 'good',
               });
             }
-            await supabase.from('copies').insert(copiesToInsert);
+            const { error: bulkCopiesErr } = await supabase.from('copies').insert(copiesToInsert);
+            if (bulkCopiesErr) {
+              errors.push(`Row ${i + 2} ("${row.title}"): copies failed - ${bulkCopiesErr.message}`);
+            }
           }
         }
       }
