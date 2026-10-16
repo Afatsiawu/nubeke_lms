@@ -4,7 +4,6 @@ import {
   BookOpen,
   Users,
   ChevronRight,
-  TrendingUp,
   RotateCcw,
   ArrowRight,
   BookPlus,
@@ -19,7 +18,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatRelative, isOverdue } from '@/lib/utils';
-import type { Book, Copy, Loan, Member, AuditLogEntry, StaffProfile } from '@/types';
+import type { Copy, Loan, Member, AuditLogEntry, StaffProfile } from '@/types';
 
 interface DashboardStats {
   totalBooks: number;
@@ -117,7 +116,7 @@ export function DashboardPage() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
-        {/* Recent operations */}
+        {/* Recent operations + operations summary inside one card */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-ink-900 flex items-center gap-2">
@@ -128,7 +127,7 @@ export function DashboardPage() {
             </Link>
           </div>
           {recentOps.length === 0 ? (
-            <div className="flex flex-col items-center py-6 text-center">
+            <div className="flex flex-col items-center py-4 text-center">
               <p className="text-sm text-ink-400">No operations recorded yet.</p>
               <p className="text-xs text-ink-400 mt-1">Actions like adding books, checking out, and registering members will appear here.</p>
             </div>
@@ -156,55 +155,72 @@ export function DashboardPage() {
               ))}
             </div>
           )}
+
+          {/* Operations summary inside the same card */}
+          <div className="mt-4 pt-4 border-t border-ink-100">
+            <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider mb-3">Operations</p>
+            <div className="grid grid-cols-2 gap-2">
+              <OpSummary icon={BookPlus} label="Books added" to="/staff/catalog" />
+              <OpSummary icon={UserPlus} label="Members registered" to="/staff/members" />
+              <OpSummary icon={ArrowRight} label="Books checked out" to="/staff/circulation" />
+              <OpSummary icon={RotateCcw} label="Books returned" to="/staff/circulation" />
+              <OpSummary icon={FileEdit} label="Catalog edits" to="/staff/catalog" />
+              <OpSummary icon={ClipboardList} label="Reservations" to="/staff/reservations" />
+              <OpSummary icon={Calendar} label="Active loans" to="/staff/circulation" />
+              <OpSummary icon={Library} label="Inventory" to="/staff/inventory" />
+            </div>
+          </div>
         </div>
 
-        {/* Overdue items */}
+        {/* Checkout card — replaces the old overdue items card */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-ink-900 flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-rust-400" /> Overdue items
+              <ArrowRight className="h-4 w-4 text-clay-500" /> Checkout
             </h2>
-            <Link to="/staff/audit" className="text-sm text-forest-600 hover:text-forest-700 flex items-center gap-1">
-              View all <ChevronRight className="h-4 w-4" />
+            <Link to="/staff/circulation" className="text-sm text-forest-600 hover:text-forest-700 flex items-center gap-1">
+              Open <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
-          {overdueLoans.length === 0 ? (
-            <div className="flex flex-col items-center py-6 text-center">
-              <p className="text-sm text-forest-600 font-medium">No overdue items</p>
-              <p className="text-xs text-ink-400 mt-1">All loans are on time.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {overdueLoans.map((loan) => (
-                <div key={loan.id} className="flex items-center justify-between rounded-lg bg-rust-50 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink-800 truncate">{loan.members.full_name}</p>
-                    <p className="text-xs text-ink-500 font-mono">{loan.copies.copy_code}</p>
-                  </div>
-                  <div className="text-right shrink-0 ml-3">
-                    <p className="text-xs text-rust-700 font-medium">Due {formatDate(loan.due_date)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Operations breakdown */}
-      <div className="mt-6 card p-5">
-        <h2 className="font-semibold text-ink-900 flex items-center gap-2 mb-4">
-          <TrendingUp className="h-4 w-4 text-ink-400" /> Operations summary
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <OpSummary icon={BookPlus} label="Books added" to="/staff/catalog" />
-          <OpSummary icon={UserPlus} label="Members registered" to="/staff/members" />
-          <OpSummary icon={ArrowRight} label="Books checked out" to="/staff/circulation" />
-          <OpSummary icon={RotateCcw} label="Books returned" to="/staff/circulation" />
-          <OpSummary icon={FileEdit} label="Catalog edits" to="/staff/catalog" />
-          <OpSummary icon={ClipboardList} label="Reservations" to="/staff/reservations" />
-          <OpSummary icon={Calendar} label="Active loans" to="/staff/circulation" />
-          <OpSummary icon={Library} label="Inventory" to="/staff/inventory" />
+          <Link to="/staff/circulation" className="block">
+            <div className="rounded-xl border-2 border-dashed border-clay-200 hover:border-clay-300 bg-clay-50/50 hover:bg-clay-50 p-6 transition-colors group cursor-pointer">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-clay-100 group-hover:bg-clay-200 transition-colors">
+                  <ArrowRight className="h-6 w-6 text-clay-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-ink-900">Check out a book</p>
+                  <p className="text-sm text-ink-500 mt-0.5">Search by title, select a member, and complete the checkout.</p>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          {/* Overdue summary below checkout link */}
+          <div className="mt-4 pt-4 border-t border-ink-100">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider">Overdue items</p>
+              <span className="text-xs font-medium text-rust-600">{overdueLoans.length} overdue</span>
+            </div>
+            {overdueLoans.length === 0 ? (
+              <p className="text-sm text-forest-600">All loans are on time.</p>
+            ) : (
+              <div className="space-y-2">
+                {overdueLoans.map((loan) => (
+                  <div key={loan.id} className="flex items-center justify-between rounded-lg bg-rust-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink-800 truncate">{loan.members.full_name}</p>
+                      <p className="text-xs text-ink-500 font-mono">{loan.copies.copy_code}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-3">
+                      <p className="text-xs text-rust-700 font-medium">Due {formatDate(loan.due_date)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -272,10 +288,10 @@ function MiniStat({ label, value, icon: Icon, color = 'text-ink-600' }: { label:
 
 function OpSummary({ icon: Icon, label, to }: { icon: typeof BookOpen; label: string; to: string }) {
   return (
-    <Link to={to} className="flex items-center gap-2.5 rounded-lg border border-ink-100 px-3 py-2.5 hover:bg-ink-50 hover:border-ink-200 transition-colors group">
-      <Icon className="h-4 w-4 text-ink-400 group-hover:text-forest-600 transition-colors" />
-      <span className="text-sm text-ink-600 group-hover:text-ink-800">{label}</span>
-      <ChevronRight className="h-3.5 w-3.5 text-ink-300 ml-auto group-hover:text-ink-500 transition-colors" />
+    <Link to={to} className="flex items-center gap-2 rounded-lg border border-ink-100 px-3 py-2 hover:bg-ink-50 hover:border-ink-200 transition-colors group">
+      <Icon className="h-4 w-4 text-ink-400 group-hover:text-forest-600 transition-colors shrink-0" />
+      <span className="text-sm text-ink-600 group-hover:text-ink-800 truncate">{label}</span>
+      <ChevronRight className="h-3.5 w-3.5 text-ink-300 ml-auto group-hover:text-ink-500 transition-colors shrink-0" />
     </Link>
   );
 }
