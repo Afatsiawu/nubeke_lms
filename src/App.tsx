@@ -1,3 +1,4 @@
+import { Component, ReactNode } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -14,6 +15,43 @@ import { ReportsPage } from '@/pages/Reports';
 import { ReservationsPage } from '@/pages/Reservations';
 import { AuditLogPage } from '@/pages/AuditLog';
 import type { StaffRole } from '@/types';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; message: string }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error.message };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('App crashed:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-ink-50 px-4">
+          <div className="max-w-md text-center">
+            <h1 className="font-serif text-xl font-semibold text-ink-900">Something went wrong</h1>
+            <p className="mt-2 text-sm text-ink-500">
+              The page failed to load. Try refreshing, or if the problem persists, contact the administrator.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 rounded-lg bg-forest-600 text-white text-sm font-medium hover:bg-forest-700"
+            >
+              Refresh page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function ProtectedRoute({ roles, children }: { roles: StaffRole[]; children: React.ReactNode }) {
   const { session, profile, loading } = useAuth();
@@ -93,11 +131,13 @@ function App() {
   }
 
   return (
-    <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <HashRouter>
+          <AppRoutes />
+        </HashRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
