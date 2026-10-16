@@ -365,9 +365,11 @@ function ReturnPanel() {
   const [searching, setSearching] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [allActiveLoans, setAllActiveLoans] = useState<(Loan & { copies: Copy; members: Member })[]>([]);
+  const [allActiveLoans, setAllActiveLoans] = useState<(Loan & { copies: Copy & { books: Book }; members: Member })[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [showList, setShowList] = useState(true);
+  const [listFilter, setListFilter] = useState('');
+  const [returningId, setReturningId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -382,21 +384,43 @@ function ReturnPanel() {
       .select('*, copies(*), members(*)')
       .eq('status', 'active')
       .order('borrowed_at', { ascending: false });
-    setAllActiveLoans((data ?? []) as (Loan & { copies: Copy; members: Member })[]);
+    const loans = (data ?? []) as (Loan & { copies: Copy; members: Member })[];
+    const copyIds = loans.map((l) => l.copies?.book_id).filter(Boolean);
+    if (copyIds.length > 0) {
+      const { data: books } = await supabase.from('books').select('*').in('id', copyIds);
+      const bookMap = new Map(books?.map((b) => [b.id, b]) ?? []);
+      setAllActiveLoans(loans.map((l) => ({
+        ...l,
+        copies: { ...l.copies, books: bookMap.get(l.copies?.book_id ?? '') } as Copy & { books: Book },
+      })) as (Loan & { copies: Copy & { books: Book }; members: Member })[]);
+    } else {
+      setAllActiveLoans(loans as (Loan & { copies: Copy; members: Member })[]);
+    }
     setLoadingList(false);
   }
 
-  async function selectFromList(loan: Loan & { copies: Copy; members: Member }) {
-    const { data: bookData } = await supabase
-      .from('books')
-      .select('*')
-      .eq('id', loan.copies.book_id)
-      .maybeSingle();
-    const copyWithBook: Copy & { books: Book } = { ...loan.copies, books: bookData as Book };
-    setSelectedCopy(copyWithBook);
+  async function selectFromList(loan: Loan & { copies: Copy & { books: Book }; members: Member }) {
+    setSelectedCopy(loan.copies);
     setActiveLoan(loan);
     setShowList(false);
   }
+
+  async function quickReturn(loan: Loan & { copies: Copy & { books: Book }; members: Member }) {
+    await processReturn(loan, loan.copies);
+  }
+
+  const filteredLoans = listFilter.trim()
+    ? allActiveLoans.filter((loan) => {
+        const q = listFilter.trim().toLowerCase();
+        return (
+          loan.members.full_name.toLowerCase().includes(q) ||
+          loan.copies.copy_code.toLowerCase().includes(q) ||
+          (loan.copies.books?.title ?? '').toLowerCase().includes(q) ||
+          (loan.copies.books?.author ?? '').toLowerCase().includes(q) ||
+          loan.members.member_code.toLowerCase().includes(q)
+        );
+      })
+    : allActiveLoans;
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -461,22 +485,34 @@ function ReturnPanel() {
       return;
     }
 
+    await processReturn(activeLoan, selectedCopy);
+  }
+
+  async function processReturn(loan: Loan & { members: Member }, copy: Copy & { books: Book }) {
+    if (!profile) return;
+    setError(null);
+    setSuccess(null);
+    setReturningId(loan.id);
+
     const returnPayload = { returned_at: new Date().toISOString(), status: 'returned' };
 
     if (!isOnline()) {
       await enqueueOp('loan_update', 'loans', returnPayload, {
-        filters: { id: activeLoan.id, copy_id: selectedCopy.id },
+        filters: { id: loan.id, copy_id: copy.id },
         staffId: profile.id,
         auditAction: 'return',
         auditEntityType: 'loan',
         auditDetails: {
-          copy_code: selectedCopy.copy_code,
-          member: activeLoan.members.full_name,
+          copy_code: copy.copy_code,
+          member: loan.members.full_name,
         },
       });
-      setSuccess(`Queued: Returned "${selectedCopy.books.title}". Will sync when online.`);
+      setSuccess(`Queued: Returned "${copy.books.title}". Will sync when online.`);
       setSelectedCopy(null);
       setActiveLoan(null);
+      setShowList(true);
+      setReturningId(null);
+      await loadActiveLoans();
       inputRef.current?.focus();
       return;
     }
@@ -484,24 +520,26 @@ function ReturnPanel() {
     const { error: err } = await supabase
       .from('loans')
       .update(returnPayload)
-      .eq('id', activeLoan.id);
+      .eq('id', loan.id);
 
     if (err) {
       setError(err.message);
+      setReturningId(null);
       return;
     }
 
-    await supabase.from('copies').update({ status: 'available' }).eq('id', selectedCopy.id);
-    await logAction(profile.id, 'return', 'loan', activeLoan.id, {
-      copy_code: selectedCopy.copy_code,
-      member: activeLoan.members.full_name,
+    await supabase.from('copies').update({ status: 'available' }).eq('id', copy.id);
+    await logAction(profile.id, 'return', 'loan', loan.id, {
+      copy_code: copy.copy_code,
+      member: loan.members.full_name,
     });
 
-    setSuccess(`Returned "${selectedCopy.books.title}". Book is now available.`);
+    setSuccess(`Returned "${copy.books.title}". Book is now available.`);
 
     setSelectedCopy(null);
     setActiveLoan(null);
     setShowList(true);
+    setReturningId(null);
     await loadActiveLoans();
     inputRef.current?.focus();
   }
@@ -637,33 +675,61 @@ function ReturnPanel() {
                 <p className="text-sm text-ink-500">No books currently checked out.</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {allActiveLoans.map((loan) => (
-                  <button
-                    key={loan.id}
-                    type="button"
-                    onClick={() => selectFromList(loan)}
-                    className="w-full flex items-center justify-between rounded-lg border border-ink-100 px-4 py-3 hover:bg-forest-50 hover:border-forest-200 transition-colors text-left"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-medium text-ink-800 truncate">
-                        {loan.members.full_name}
-                      </p>
-                      <p className="text-xs text-ink-500 font-mono">{loan.copies.copy_code}</p>
-                    </div>
-                    <div className="text-right shrink-0 ml-3 flex flex-col items-end gap-1">
-                      <span className="text-xs text-ink-500">Due {formatDate(loan.due_date)}</span>
-                      {isOverdue(loan.due_date, loan.returned_at) ? (
-                        <span className="text-xs font-medium text-rust-600">
-                          {Math.abs(daysUntilDue(loan.due_date))} days overdue
-                        </span>
-                      ) : (
-                        <span className="badge-active">active</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                  <input
+                    value={listFilter}
+                    onChange={(e) => setListFilter(e.target.value)}
+                    placeholder="Search by member, book title, or copy code…"
+                    className="input pl-10"
+                  />
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredLoans.length === 0 ? (
+                    <p className="text-sm text-ink-400 py-3 text-center">No matches for "{listFilter.trim()}".</p>
+                  ) : (
+                    filteredLoans.map((loan) => (
+                      <div
+                        key={loan.id}
+                        className="flex items-center justify-between rounded-lg border border-ink-100 px-4 py-3 hover:bg-forest-50 hover:border-forest-200 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-ink-800 truncate">
+                            {loan.members.full_name}
+                          </p>
+                          <p className="text-xs text-ink-500 truncate">
+                            {(loan.copies.books?.title ?? '—')}
+                          </p>
+                          <p className="text-xs text-ink-400 font-mono">{loan.copies.copy_code}</p>
+                        </div>
+                        <div className="text-right shrink-0 ml-3 flex flex-col items-end gap-1.5">
+                          <span className="text-xs text-ink-500">Due {formatDate(loan.due_date)}</span>
+                          {isOverdue(loan.due_date, loan.returned_at) ? (
+                            <span className="text-xs font-medium text-rust-600">
+                              {Math.abs(daysUntilDue(loan.due_date))} days overdue
+                            </span>
+                          ) : (
+                            <span className="badge-active">active</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => quickReturn(loan)}
+                            disabled={returningId === loan.id}
+                            className="btn-secondary text-xs px-3 py-1.5 mt-1"
+                          >
+                            {returningId === loan.id ? (
+                              <><span className="inline-block h-3 w-3 border-2 border-ink-300 border-t-forest-500 rounded-full animate-spin" /> Returning…</>
+                            ) : (
+                              <><RotateCcw className="h-3 w-3" /> Mark returned</>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
             )
           )}
         </div>

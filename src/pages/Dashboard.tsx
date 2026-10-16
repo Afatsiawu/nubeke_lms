@@ -47,7 +47,7 @@ export function DashboardPage() {
   useEffect(() => {
     async function load() {
       const [
-        booksRes, copiesRes, membersRes, loansRes, reservationsRes, auditRes,
+        booksRes, copiesRes, membersRes, loansRes, reservationsRes, auditRes, activeLoansRes,
       ] = await Promise.all([
         supabase.from('books').select('id'),
         supabase.from('copies').select('id, status'),
@@ -57,6 +57,8 @@ export function DashboardPage() {
         supabase.from('audit_log').select('*, staff_profiles(*)').order('created_at', { ascending: false }).limit(8),
         supabase.from('loans').select('*, copies(*), members(*)').eq('status', 'active').order('borrowed_at', { ascending: false }).limit(10),
       ]);
+
+      const activeLoansData = (activeLoansRes.data ?? []) as (Loan & { copies: Copy; members: Member })[];
 
       const copies = copiesRes.data ?? [];
       const members = membersRes.data ?? [];
@@ -75,9 +77,9 @@ export function DashboardPage() {
         pendingReservations: reservationsRes.data?.length ?? 0,
       });
 
-      setRecentOps((auditRes.data ?? []) as AuditWithStaff[]);
+      setRecentOps(((auditRes.data ?? []) as AuditWithStaff[]).filter((op) => op.action !== 'catalog_edit'));
       setOverdueLoans(loans.filter((l) => l.status === 'active' && isOverdue(l.due_date, l.returned_at)).slice(0, 5));
-      setCheckedOutLoans((activeLoansRes.data ?? []) as (Loan & { copies: Copy; members: Member })[]);
+      setCheckedOutLoans(activeLoansData);
       setLoading(false);
     }
     load();
@@ -104,15 +106,14 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard icon={BookOpen} label="Books in catalog" value={stats?.totalBooks ?? 0} color="forest" to="/staff/catalog" />
         <StatCard icon={Users} label="Members" value={stats?.totalMembers ?? 0} color="ink" to="/staff/members" />
-        <StatCard icon={ArrowRight} label="Active loans" value={stats?.activeLoans ?? 0} color="clay" to="/staff/circulation" />
+        <StatCard icon={ArrowRight} label="Checked out" value={stats?.activeLoans ?? 0} color="clay" to="/staff/circulation" />
         <StatCard icon={AlertCircle} label="Overdue" value={stats?.overdueCount ?? 0} color="rust" to="/staff/circulation" />
       </div>
 
       {/* Analytics row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <MiniStat label="Total copies" value={stats?.totalCopies ?? 0} icon={Library} />
         <MiniStat label="Available" value={stats?.availableCopies ?? 0} icon={BookOpen} color="text-forest-600" />
-        <MiniStat label="On loan" value={stats?.borrowedCopies ?? 0} icon={ArrowRight} color="text-clay-600" />
         <MiniStat label="Returned" value={stats?.returnedLoans ?? 0} icon={RotateCcw} color="text-ink-600" />
         <MiniStat label="Reservations" value={stats?.pendingReservations ?? 0} icon={ClipboardList} color="text-kente-600" />
       </div>
@@ -264,7 +265,6 @@ function OpIcon({ action }: { action: string }) {
     case 'catalog_add':
     case 'copy_add':
       return <BookPlus className={`${iconClass} text-forest-600`} />;
-    case 'catalog_edit':
     case 'member_edit':
     case 'copy_status_change':
       return <FileEdit className={`${iconClass} text-kente-600`} />;
@@ -291,9 +291,6 @@ function opColor(action: string): string {
       return 'text-forest-600';
     case 'member_register':
       return 'text-ink-600';
-    case 'reservation_create':
-    case 'reservation_update':
-      return 'text-kente-600';
     case 'catalog_remove':
       return 'text-rust-600';
     default:
