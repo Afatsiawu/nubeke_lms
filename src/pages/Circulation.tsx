@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, FormEvent } from 'react';
-import { ArrowRightLeft, Search, ArrowRight, RotateCcw, AlertCircle, Check, User, Book as BookIcon, CloudOff } from 'lucide-react';
+import { useEffect, useState, useRef, FormEvent, useCallback } from 'react';
+import { Search, ArrowRight, RotateCcw, AlertCircle, Check, User, Book as BookIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { logAction } from '@/lib/audit';
@@ -88,26 +88,40 @@ function CheckoutPanel() {
     setMemberResults(data ?? []);
   }
 
-  async function searchBooks(q: string) {
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchBooks = useCallback((q: string) => {
     setBookQuery(q);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     if (q.trim().length < 1) {
       setBookResults([]);
       return;
     }
     setSearching(true);
-    const { data } = await supabase
-      .from('books')
-      .select('*, copies(*)')
-      .or(`title.ilike.%${q}%,author.ilike.%${q}%`)
-      .order('title')
-      .limit(15);
+    searchTimer.current = setTimeout(async () => {
+      const sanitized = q.trim().replace(/[%_]/g, '');
+      if (!sanitized) {
+        setSearching(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('books')
+        .select('*, copies(*)')
+        .or(`title.ilike.%${sanitized}%,author.ilike.%${sanitized}%`)
+        .order('title')
+        .limit(15);
 
-    const withAvailable = (data ?? []).filter(
-      (b) => b.copies?.some((c: Copy) => c.status === 'available')
-    ) as BookWithAvailableCopies[];
-    setBookResults(withAvailable);
-    setSearching(false);
-  }
+      if (error) {
+        setSearching(false);
+        return;
+      }
+      const withAvailable = (data ?? []).filter(
+        (b) => b.copies?.some((c: Copy) => c.status === 'available')
+      ) as BookWithAvailableCopies[];
+      setBookResults(withAvailable);
+      setSearching(false);
+    }, 250);
+  }, []);
 
   function selectBook(book: BookWithAvailableCopies) {
     const available = book.copies.find((c) => c.status === 'available');
@@ -356,26 +370,40 @@ function ReturnPanel() {
     inputRef.current?.focus();
   }, []);
 
-  async function searchBooks(q: string) {
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchBooks = useCallback((q: string) => {
     setBookQuery(q);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     if (q.trim().length < 1) {
       setBookResults([]);
       return;
     }
     setSearching(true);
-    const { data } = await supabase
-      .from('books')
-      .select('*, copies(*)')
-      .or(`title.ilike.%${q}%,author.ilike.%${q}%`)
-      .order('title')
-      .limit(15);
+    searchTimer.current = setTimeout(async () => {
+      const sanitized = q.trim().replace(/[%_]/g, '');
+      if (!sanitized) {
+        setSearching(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('books')
+        .select('*, copies(*)')
+        .or(`title.ilike.%${sanitized}%,author.ilike.%${sanitized}%`)
+        .order('title')
+        .limit(15);
 
-    const withBorrowed = (data ?? []).filter(
-      (b) => b.copies?.some((c: Copy) => c.status === 'borrowed')
-    ) as (Book & { copies: Copy[] })[];
-    setBookResults(withBorrowed);
-    setSearching(false);
-  }
+      if (error) {
+        setSearching(false);
+        return;
+      }
+      const withBorrowed = (data ?? []).filter(
+        (b) => b.copies?.some((c: Copy) => c.status === 'borrowed')
+      ) as (Book & { copies: Copy[] })[];
+      setBookResults(withBorrowed);
+      setSearching(false);
+    }, 250);
+  }, []);
 
   async function selectBook(book: Book & { copies: Copy[] }) {
     const borrowed = book.copies.find((c) => c.status === 'borrowed');
