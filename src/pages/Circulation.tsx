@@ -146,6 +146,7 @@ function CheckoutPanel() {
       copy_id: selectedCopy.id,
       member_id: selectedMember.id,
       staff_id: profile.id,
+      borrowed_at: new Date().toISOString(),
       due_date: dueDate,
       status: 'active',
     };
@@ -364,11 +365,38 @@ function ReturnPanel() {
   const [searching, setSearching] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [allActiveLoans, setAllActiveLoans] = useState<(Loan & { copies: Copy; members: Member })[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [showList, setShowList] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
+    loadActiveLoans();
   }, []);
+
+  async function loadActiveLoans() {
+    setLoadingList(true);
+    const { data } = await supabase
+      .from('loans')
+      .select('*, copies(*), members(*)')
+      .eq('status', 'active')
+      .order('borrowed_at', { ascending: false });
+    setAllActiveLoans((data ?? []) as (Loan & { copies: Copy; members: Member })[]);
+    setLoadingList(false);
+  }
+
+  async function selectFromList(loan: Loan & { copies: Copy; members: Member }) {
+    const { data: bookData } = await supabase
+      .from('books')
+      .select('*')
+      .eq('id', loan.copies.book_id)
+      .maybeSingle();
+    const copyWithBook: Copy & { books: Book } = { ...loan.copies, books: bookData as Book };
+    setSelectedCopy(copyWithBook);
+    setActiveLoan(loan);
+    setShowList(false);
+  }
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -473,6 +501,8 @@ function ReturnPanel() {
 
     setSelectedCopy(null);
     setActiveLoan(null);
+    setShowList(true);
+    await loadActiveLoans();
     inputRef.current?.focus();
   }
 
@@ -582,6 +612,62 @@ function ReturnPanel() {
           <RotateCcw className="h-4 w-4" /> Mark returned
         </button>
       </form>
+
+      {/* All active checkouts list */}
+      {!selectedCopy && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-ink-900 flex items-center gap-2">
+              <BookIcon className="h-4 w-4 text-ink-400" /> All checked-out books
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowList(!showList)}
+              className="text-sm text-forest-600 hover:text-forest-700"
+            >
+              {showList ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showList && (
+            loadingList ? (
+              <p className="text-sm text-ink-500">Loading checked-out books…</p>
+            ) : allActiveLoans.length === 0 ? (
+              <div className="flex flex-col items-center py-6 text-center">
+                <Check className="h-8 w-8 text-forest-500 mx-auto mb-2" />
+                <p className="text-sm text-ink-500">No books currently checked out.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {allActiveLoans.map((loan) => (
+                  <button
+                    key={loan.id}
+                    type="button"
+                    onClick={() => selectFromList(loan)}
+                    className="w-full flex items-center justify-between rounded-lg border border-ink-100 px-4 py-3 hover:bg-forest-50 hover:border-forest-200 transition-colors text-left"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink-800 truncate">
+                        {loan.members.full_name}
+                      </p>
+                      <p className="text-xs text-ink-500 font-mono">{loan.copies.copy_code}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-3 flex flex-col items-end gap-1">
+                      <span className="text-xs text-ink-500">Due {formatDate(loan.due_date)}</span>
+                      {isOverdue(loan.due_date, loan.returned_at) ? (
+                        <span className="text-xs font-medium text-rust-600">
+                          {Math.abs(daysUntilDue(loan.due_date))} days overdue
+                        </span>
+                      ) : (
+                        <span className="badge-active">active</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      )}
     </div>
   );
 }

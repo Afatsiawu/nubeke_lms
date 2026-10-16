@@ -11,7 +11,6 @@ import {
   FileEdit,
   AlertCircle,
   ClipboardList,
-  Calendar,
   Library,
   Activity,
 } from 'lucide-react';
@@ -42,6 +41,7 @@ export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentOps, setRecentOps] = useState<AuditWithStaff[]>([]);
   const [overdueLoans, setOverdueLoans] = useState<(Loan & { copies: Copy; members: Member })[]>([]);
+  const [checkedOutLoans, setCheckedOutLoans] = useState<(Loan & { copies: Copy; members: Member })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,6 +55,7 @@ export function DashboardPage() {
         supabase.from('loans').select('*, copies(*), members(*)').order('created_at', { ascending: false }).limit(10),
         supabase.from('reservations').select('id, status').eq('status', 'pending'),
         supabase.from('audit_log').select('*, staff_profiles(*)').order('created_at', { ascending: false }).limit(8),
+        supabase.from('loans').select('*, copies(*), members(*)').eq('status', 'active').order('borrowed_at', { ascending: false }).limit(10),
       ]);
 
       const copies = copiesRes.data ?? [];
@@ -76,6 +77,7 @@ export function DashboardPage() {
 
       setRecentOps((auditRes.data ?? []) as AuditWithStaff[]);
       setOverdueLoans(loans.filter((l) => l.status === 'active' && isOverdue(l.due_date, l.returned_at)).slice(0, 5));
+      setCheckedOutLoans((activeLoansRes.data ?? []) as (Loan & { copies: Copy; members: Member })[]);
       setLoading(false);
     }
     load();
@@ -162,12 +164,37 @@ export function DashboardPage() {
             <div className="grid grid-cols-2 gap-2">
               <OpSummary icon={BookPlus} label="Books added" to="/staff/catalog" />
               <OpSummary icon={UserPlus} label="Members registered" to="/staff/members" />
-              <OpSummary icon={ArrowRight} label="Books checked out" to="/staff/circulation" />
               <OpSummary icon={RotateCcw} label="Books returned" to="/staff/circulation" />
-              <OpSummary icon={FileEdit} label="Catalog edits" to="/staff/catalog" />
               <OpSummary icon={ClipboardList} label="Reservations" to="/staff/reservations" />
-              <OpSummary icon={Calendar} label="Active loans" to="/staff/circulation" />
               <OpSummary icon={Library} label="Inventory" to="/staff/inventory" />
+            </div>
+
+            {/* People who actually checked out books */}
+            <div className="mt-4 pt-3 border-t border-ink-100">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-ink-500 uppercase tracking-wider">Books checked out</p>
+                <span className="text-xs font-medium text-clay-600">{checkedOutLoans.length} active</span>
+              </div>
+              {checkedOutLoans.length === 0 ? (
+                <p className="text-sm text-ink-400 py-2">No books currently checked out.</p>
+              ) : (
+                <div className="space-y-2">
+                  {checkedOutLoans.map((loan) => (
+                    <div key={loan.id} className="flex items-center justify-between rounded-lg border border-ink-100 px-3 py-2 hover:bg-ink-50 transition-colors">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-ink-800 truncate">{loan.members.full_name}</p>
+                        <p className="text-xs text-ink-500 font-mono">{loan.copies.copy_code}</p>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <p className="text-xs text-ink-500">Due {formatDate(loan.due_date)}</p>
+                        {isOverdue(loan.due_date, loan.returned_at) && (
+                          <span className="text-xs font-medium text-rust-600">overdue</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
