@@ -2,8 +2,6 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   BookOpen,
-  ArrowRightLeft,
-  Package,
   Users,
   BarChart3,
   Bookmark,
@@ -25,11 +23,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: '/staff/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['staff', 'management'] },
-  { to: '/staff/catalog', label: 'Catalog', icon: BookOpen, roles: ['staff'] },
-  { to: '/staff/circulation', label: 'Circulation', icon: ArrowRightLeft, roles: ['staff'] },
-  { to: '/staff/inventory', label: 'Inventory', icon: Package, roles: ['staff', 'management'] },
-  { to: '/staff/members', label: 'Members', icon: Users, roles: ['staff'] },
-  { to: '/staff/reservations', label: 'Reservations', icon: Bookmark, roles: ['staff'] },
+  { to: '/staff/catalog', label: 'Catalog', icon: BookOpen, roles: ['staff', 'management'] },
+  { to: '/staff/members', label: 'Members', icon: Users, roles: ['staff', 'management'] },
+  { to: '/staff/reservations', label: 'Reservations', icon: Bookmark, roles: ['staff', 'management'] },
   { to: '/staff/reports', label: 'Reports', icon: BarChart3, roles: ['staff', 'management'] },
   { to: '/staff/audit', label: 'Audit Log', icon: ScrollText, roles: ['staff', 'management'] },
 ];
