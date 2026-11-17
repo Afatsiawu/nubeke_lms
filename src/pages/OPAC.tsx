@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, FormEvent } from 'react';
-import { Search, BookOpen, Filter, X, ChevronRight, Library, MapPin } from 'lucide-react';
+import { Search, BookOpen, Filter, X, ChevronRight, Library, MapPin, Bookmark, User, Mail, Phone, AlertCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Logo } from '@/components/Logo';
 import { SyncStatus } from '@/components/SyncStatus';
 import type { Book, Copy } from '@/types';
-import { getAvailability } from '@/lib/utils';
+import { getAvailability, generateMemberCode } from '@/lib/utils';
 
 interface BookWithCopies extends Book {
   copies: Copy[];
@@ -17,6 +17,7 @@ export function OPACPage() {
   const [subjectFilter, setSubjectFilter] = useState<string>('');
   const [availabilityFilter, setAvailabilityFilter] = useState<string>('');
   const [selectedBook, setSelectedBook] = useState<BookWithCopies | null>(null);
+  const [reserveBook, setReserveBook] = useState<BookWithCopies | null>(null);
   const [subjects, setSubjects] = useState<string[]>([]);
 
   useEffect(() => {
@@ -226,7 +227,12 @@ export function OPACPage() {
 
       {/* Detail modal */}
       {selectedBook && (
-        <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} />
+        <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onReserve={() => setReserveBook(selectedBook)} />
+      )}
+
+      {/* Reserve modal */}
+      {reserveBook && (
+        <ReserveModal book={reserveBook} onClose={() => setReserveBook(null)} />
       )}
 
       {/* Footer */}
@@ -245,7 +251,7 @@ export function OPACPage() {
   );
 }
 
-function BookDetailModal({ book, onClose }: { book: BookWithCopies; onClose: () => void }) {
+function BookDetailModal({ book, onReserve, onClose }: { book: BookWithCopies; onReserve: () => void; onClose: () => void }) {
   const { available, total } = getAvailability(book.copies);
   return (
     <div
@@ -293,6 +299,15 @@ function BookDetailModal({ book, onClose }: { book: BookWithCopies; onClose: () 
             {book.description && (
               <p className="mt-4 text-sm text-ink-600 leading-relaxed">{book.description}</p>
             )}
+            <button
+              onClick={() => { onClose(); onReserve(); }}
+              className="btn-primary w-full mt-5"
+            >
+              <Bookmark className="h-4 w-4" /> Reserve this book
+            </button>
+            <p className="text-xs text-ink-400 mt-2 text-center">
+              Library staff will hold the book for you and contact you when it's ready.
+            </p>
           </div>
         </div>
         <div className="px-6 pb-6">
@@ -319,6 +334,193 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex gap-2">
       <span className="text-ink-400 w-24 shrink-0">{label}</span>
       <span className="text-ink-700">{value}</span>
+    </div>
+  );
+}
+
+function ReserveModal({ book, onClose }: { book: BookWithCopies; onClose: () => void }) {
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fullName.trim() || (!email.trim() && !phone.trim())) {
+      setError('Please enter your name and either an email or phone number.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+
+    const { data: members, error: loadErr } = await supabase
+      .from('members')
+      .select('id, member_code, email, phone');
+    if (loadErr) {
+      setError('Could not reach the library system. Please try again.');
+      setSaving(false);
+      return;
+    }
+
+    const existing = (members ?? []) as { id: string; member_code: string; email: string | null; phone: string | null }[];
+    const match = existing.find(
+      (m) =>
+        (!!email.trim() && m.email?.toLowerCase() === email.trim().toLowerCase()) ||
+        (!!phone.trim() && m.phone === phone.trim())
+    );
+
+    let memberId = match?.id;
+    if (!match) {
+      const { data: newMember, error: insertErr } = await supabase
+        .from('members')
+        .insert({
+          full_name: fullName.trim(),
+          member_code: generateMemberCode(existing.map((m) => m.member_code)),
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          membership_status: 'active',
+        })
+        .select('id')
+        .single();
+      if (insertErr || !newMember) {
+        setError('Could not save your details. Please try again.');
+        setSaving(false);
+        return;
+      }
+      memberId = newMember.id;
+    }
+
+    const contact = [email.trim(), phone.trim()].filter(Boolean).join(' · ');
+    const { error: resErr } = await supabase.from('reservations').insert({
+      book_id: book.id,
+      member_id: memberId,
+      status: 'pending',
+      notes: notes.trim()
+        ? `${notes.trim()}${contact ? ` (contact: ${contact})` : ''}`
+        : contact || null,
+    });
+    if (resErr) {
+      setError('Could not place the reservation. Please try again.');
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
+    setDone(true);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/40 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="card max-w-md w-full animate-scale-in max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-ink-100">
+          <h2 className="font-serif text-lg font-semibold text-ink-900">Reserve a book</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="p-6 text-center">
+            <CheckCircle className="h-12 w-12 text-forest-600 mx-auto mb-3" />
+            <h3 className="font-serif text-lg font-semibold text-ink-900">Reservation placed</h3>
+            <p className="text-sm text-ink-600 mt-2 leading-relaxed">
+              We've reserved <span className="font-medium">{book.title}</span> for you. Library staff
+              will hold it and contact you when it's ready for pickup.
+            </p>
+            <button onClick={onClose} className="btn-primary w-full mt-5">Done</button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div className="flex items-center gap-3 rounded-lg bg-ink-50 px-3 py-2.5">
+              {book.cover_image_url ? (
+                <img src={book.cover_image_url} alt={book.title} className="h-12 w-8 rounded object-cover shadow-sm" />
+              ) : (
+                <div className="book-cover-placeholder h-12 w-8 rounded text-[6px] text-center px-0.5 leading-tight">
+                  {book.title.slice(0, 12)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink-900 truncate">{book.title}</p>
+                <p className="text-xs text-ink-500">{book.author}</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Your full name <span className="text-rust-500">*</span></label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                <input
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Ama Mensah"
+                  className="input pl-10"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="input pl-10"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. 024 000 0000"
+                  className="input pl-10"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-ink-400">Please provide at least one contact so the library can reach you.</p>
+
+            <div>
+              <label className="label">Note for the library (optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="Anything staff should know?"
+                className="input"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg bg-rust-50 px-3 py-2.5 text-sm text-rust-700">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+              <button type="submit" disabled={saving} className="btn-primary">
+                <Bookmark className="h-4 w-4" /> {saving ? 'Placing…' : 'Place reservation'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
