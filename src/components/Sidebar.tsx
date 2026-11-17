@@ -12,28 +12,23 @@ import {
 import { Logo } from './Logo';
 import { SyncStatus } from './SyncStatus';
 import { useAuth } from '@/lib/auth';
-import type { StaffRole } from '@/types';
-
 interface NavItem {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
-  roles: StaffRole[];
 }
 
 const navItems: NavItem[] = [
-  { to: '/staff/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['staff', 'management'] },
-  { to: '/staff/catalog', label: 'Catalog', icon: BookOpen, roles: ['staff', 'management'] },
-  { to: '/staff/members', label: 'Members', icon: Users, roles: ['staff', 'management'] },
-  { to: '/staff/reservations', label: 'Reservations', icon: Bookmark, roles: ['staff', 'management'] },
-  { to: '/staff/reports', label: 'Reports', icon: BarChart3, roles: ['staff', 'management'] },
-  { to: '/staff/audit', label: 'Audit Log', icon: ScrollText, roles: ['staff', 'management'] },
+  { to: '/staff/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/staff/catalog', label: 'Catalog', icon: BookOpen },
+  { to: '/staff/members', label: 'Members', icon: Users },
+  { to: '/staff/reservations', label: 'Reservations', icon: Bookmark },
+  { to: '/staff/reports', label: 'Reports', icon: BarChart3 },
+  { to: '/staff/audit', label: 'Audit Log', icon: ScrollText },
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { profile, signOut } = useAuth();
-
-  const visibleItems = navItems.filter((item) => profile && item.roles.includes(profile.role));
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-ink-200 bg-white">
@@ -51,7 +46,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {visibleItems.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
